@@ -164,6 +164,18 @@ export interface LearningPathStep {
   hop: number;
 }
 
+/**
+ * Shortest study route from where a learner is now (`sourceId`) to what they
+ * want to learn (`targetId`), returned in the order they should study it.
+ *
+ * Note the direction flip. `REQUIRES` points from an advanced concept *down*
+ * to its prerequisite (Quantum Mechanics -[:REQUIRES]-> Linear Algebra), so a
+ * learner's forward journey runs against the arrows. We therefore traverse
+ * from the goal down to their starting point and `reverse()` the result, which
+ * yields a path reading source -> ... -> target. Traversing source -> target
+ * directly would only ever match when the caller passed the advanced concept
+ * as the source — i.e. it would fail for exactly the intuitive input.
+ */
 export async function getShortestLearningPath(
   env: Env,
   sourceId: string,
@@ -173,8 +185,8 @@ export async function getShortestLearningPath(
     const result = await session.run(
       `
       MATCH (start:Concept {id: $sourceId}), (target:Concept {id: $targetId})
-      MATCH p = shortestPath((start)-[:REQUIRES*..10]->(target))
-      RETURN [n IN nodes(p) | n] AS pathNodes
+      MATCH p = shortestPath((target)-[:REQUIRES*..10]->(start))
+      RETURN [n IN reverse(nodes(p)) | n] AS pathNodes
       `,
       { sourceId, targetId }
     );

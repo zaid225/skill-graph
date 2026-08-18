@@ -1,6 +1,10 @@
 name = "skillgraph-backend"
 main = "src/index.ts"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-08-01"
+# nodejs_compat gives the Worker real node:net / node:tls, which neo4j-driver's
+# Bolt channel needs to speak bolt+s://. The compatibility_date matters as much
+# as the flag here — older dates ship a thinner node:tls that leaves the
+# driver's TLS handshake hanging until it times out.
 compatibility_flags = ["nodejs_compat"]
 
 # Free-tier Worker; adjust as needed

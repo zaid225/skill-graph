@@ -65,7 +65,7 @@ graph LR
 - `(:Concept)-[:REQUIRES]->(:Concept)` — the source concept requires the target as a prerequisite.
 - `(:Concept)-[:TEACHES]->(:Resource)` — the resource teaches this concept.
 
-The seed dataset ships **39 Concepts** and **39 Resources** across six domains (Mathematics, Physics, Chemistry, Biology, Computer Science, and Design/UI-UX), with **46 `REQUIRES`** and **39 `TEACHES`** relationships (85 total), and prerequisite chains up to 6 hops deep — deep enough to meaningfully exercise multi-hop traversal and shortest-path queries. The Design domain (Typography, Color Theory, Visual Hierarchy, Accessibility, Wireframing, Information Architecture, Interaction Design, Usability Testing, Design Systems) is mostly self-contained but bridges into Computer Science via `Design Systems REQUIRES Programming Fundamentals` — try a shortest-path query from `arithmetic` to `design-systems` to see a cross-domain path.
+The seed dataset ships **39 Concepts** and **39 Resources** across six domains (Mathematics, Physics, Chemistry, Biology, Computer Science, and Design/UI-UX), with **46 `REQUIRES`** and **39 `TEACHES`** relationships (85 total), and prerequisite chains up to 6 hops deep — deep enough to meaningfully exercise multi-hop traversal and shortest-path queries. The Design domain (Typography, Color Theory, Visual Hierarchy, Accessibility, Wireframing, Information Architecture, Interaction Design, Usability Testing, Design Systems) forms its own prerequisite tree and touches Computer Science via `Design Systems REQUIRES Programming Fundamentals`. Note that Programming Fundamentals is itself a root with no prerequisites, so there is deliberately **no** path from the Design tree down into Mathematics — a good case for exercising the "no path found" state (`design-systems` → `arithmetic` correctly returns 404). For a deep path that does exist, try `quantum-mechanics` → `arithmetic` (4 hops, crossing Physics into Mathematics).
 
 ---
 
@@ -180,11 +180,19 @@ Open http://localhost:5173 — you should see the graph populate, a connection s
 
 ---
 
-## Cloudflare Workers gotcha: `neo4j-driver`'s browser channel
+## Running `neo4j-driver` on Cloudflare Workers
 
-`neo4j-driver` (via `neo4j-driver-bolt-connection`) ships a `package.json` `"browser"` field that swaps its raw-socket **Node channel** for a **WebSocket channel** meant for actual web browsers. Wrangler bundles Workers in browser-platform mode by default, so without a fix, `npm run dev` / a deployed Worker will silently try to speak Bolt-over-WebSocket — which CognoDB (like virtually every Bolt server) doesn't support — and every query fails with a `WebSocket connection failure` error.
+Getting the official driver to speak `bolt+s://` from a Worker takes **three** things. Miss any one and every query fails, each with a different and fairly misleading error. All three are already configured in this repo — this section exists so the reasoning isn't lost.
 
-`compatibility_flags = ["nodejs_compat"]` in `wrangler.toml` gives the Worker a real `node:net` / `node:tls` (backed by the Workers TCP `connect()` API), so the Node channel actually works here — the driver just needs to be told to use it. [`backend/scripts/patch-neo4j-driver.cjs`](backend/scripts/patch-neo4j-driver.cjs) removes the `"browser"` field from both packages' `package.json`, restoring the Node channel; it runs automatically via `postinstall`, so a plain `npm install` is all you need — no manual step required, and it's safe to re-run.
+**1. `nodejs_compat` + a recent `compatibility_date`.** The flag alone isn't enough. `wrangler.toml` pins `compatibility_date = "2026-08-01"`; on an older date (we started on `2024-11-01`) the runtime ships a thinner `node:tls`, and the driver's TLS handshake simply hangs until it hits `connectionTimeout` — surfacing as `Failed to establish connection in 10000ms`, which looks exactly like a firewall block and will send you hunting through your database's IP allowlist for no reason.
+
+**2. Drop the `"browser"` field remap.** `neo4j-driver` and `neo4j-driver-bolt-connection` each ship a `package.json` `"browser"` field that swaps their raw-socket **Node channel** for a **WebSocket channel** intended for real browsers. Wrangler bundles Workers in browser-platform mode, so it honors that remap and the Worker tries to speak Bolt-over-WebSocket — which CognoDB, like virtually every Bolt server, doesn't support. Symptom: `WebSocket connection failure`.
+
+**3. Strip `rejectUnauthorized` from the driver's TLS options.** With the Node channel restored, the driver builds its `tls.connect()` options with a hardcoded `rejectUnauthorized: false`. Workers' `node:tls` doesn't implement that option and throws `ERR_OPTION_NOT_IMPLEMENTED`. Removing it is also a security *improvement*: rather than the driver's "skip certificate verification", the connection falls back to the Workers runtime's default TLS behaviour, which does verify the server certificate against public CAs.
+
+Items 2 and 3 are applied by [`backend/scripts/patch-neo4j-driver.cjs`](backend/scripts/patch-neo4j-driver.cjs), which runs automatically via `postinstall` — a plain `npm install` is all you need, including on Cloudflare's own build pipeline. Both patches are idempotent, and the script fails loudly if the driver's internals change shape rather than silently shipping a Worker that can't connect.
+
+> **Debugging tip.** If connections fail, first determine whether it's the network or the driver. A few lines using `connect()` from `cloudflare:sockets` to your host on port 7687 — once with `secureTransport: "off"`, once with `"on"` — will tell you in seconds. If both succeed, the network path is fine and the problem is in the driver/runtime layer, so don't go changing firewall rules.
 
 ---
 

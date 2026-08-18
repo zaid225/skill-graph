@@ -115,7 +115,7 @@ export function ConceptDrawer({ conceptId, onFindPathTo, onSelectConcept }: Conc
         <CardTitle className="text-base">{concept.name}</CardTitle>
         <p className="text-sm text-muted-foreground">{concept.description}</p>
         <Button size="sm" variant="secondary" className="w-fit gap-1.5" onClick={() => onFindPathTo(concept.id)}>
-          <Route className="h-3.5 w-3.5" /> Find Path to This Concept
+          <Route className="h-3.5 w-3.5" /> Plan a Path to This
         </Button>
       </CardHeader>
 

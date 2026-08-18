@@ -7,7 +7,10 @@
  * the connection banner instead of a generic error state.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+// Strip any trailing slash so `VITE_API_BASE_URL=http://host:port/` doesn't
+// produce a double slash once a path like "/api/..." is appended — the
+// Worker's router treats "//api/..." as a 404, not "/api/...".
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 
 export type Domain = "Mathematics" | "Physics" | "Chemistry" | "Biology" | "Computer Science" | "Design";
 

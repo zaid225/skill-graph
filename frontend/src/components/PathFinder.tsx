@@ -31,7 +31,9 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
       onPathFound(res.path);
     } catch (err) {
       if (err instanceof ApiError && err.code === "NO_PATH_FOUND") {
-        setError("No prerequisite-based path connects these two concepts.");
+        setError(
+          "These aren't connected by prerequisites — the target doesn't build on what you already know. Try a different pair."
+        );
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -51,8 +53,8 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ConceptSelect label="From" value={source} onChange={setSource} concepts={concepts} />
-        <ConceptSelect label="To" value={target} onChange={setTarget} concepts={concepts} />
+        <ConceptSelect label="I already know" value={source} onChange={setSource} concepts={concepts} />
+        <ConceptSelect label="I want to learn" value={target} onChange={setTarget} concepts={concepts} />
 
         <Button onClick={findPath} disabled={!source || !target || source === target || loading} className="w-full">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}
