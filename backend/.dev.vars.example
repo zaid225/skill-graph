@@ -1,0 +1,4 @@
+# Copy this file to `.dev.vars` for local `wrangler dev` — never commit the real file.
+COGNODB_URI=bolt+s://your-cognodb-instance.cognodb.cloud:7687
+COGNODB_USER=cognodb
+COGNODB_PASSWORD=your-password-here

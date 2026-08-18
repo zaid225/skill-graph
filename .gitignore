@@ -1,0 +1,8 @@
+# Editor / tooling folders that should never be committed
+.claude/
+.vscode/
+.idea/
+
+# OS cruft
+.DS_Store
+Thumbs.db
