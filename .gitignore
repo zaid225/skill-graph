@@ -6,3 +6,7 @@
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Personal working notes, not part of the deliverable
+docs/demo-script.md
+docs/submission-email.md
