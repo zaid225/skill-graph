@@ -439,16 +439,26 @@ export async function updateConcept(
   });
 }
 
-/** Removes a concept along with its edges and any resources only it taught. */
+/**
+ * Removes a concept, its edges, and any resource that nothing else teaches.
+ *
+ * The orphan check is done by collecting the other teachers and measuring the
+ * list rather than with `NOT EXISTS { ... }`. Pattern predicates and EXISTS
+ * subqueries do not respect bound variables on CognoDB 0.9.x (see
+ * wouldCreateCycle for the same problem), and here that misfires destructively:
+ * the guard stops discriminating and the delete reaches resources belonging to
+ * other concepts. Collect-and-count gives the right answer.
+ */
 export async function deleteConcept(env: Env, conceptId: string): Promise<void> {
   await withWriteSession(env, async (session) => {
     await session.executeWrite(async (tx) => {
-      // Resources exist to teach a concept, so one left with no concept is
-      // unreachable in the UI. Clean those up rather than leaking orphans.
       await tx.run(
         `
         MATCH (c:Concept {id: $conceptId})-[:TEACHES]->(res:Resource)
-        WHERE NOT EXISTS { MATCH (other:Concept)-[:TEACHES]->(res) WHERE other.id <> $conceptId }
+        OPTIONAL MATCH (other:Concept)-[:TEACHES]->(res)
+        WITH res, collect(DISTINCT other.id) AS teachers
+        WITH res, [t IN teachers WHERE t <> $conceptId] AS otherTeachers
+        WHERE size(otherTeachers) = 0
         DETACH DELETE res
         `,
         { conceptId }

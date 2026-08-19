@@ -126,7 +126,39 @@ OPTIONAL MATCH path = (prereq)-[:REQUIRES*1..]->(concept:Concept {id: $conceptId
 RETURN count(path) > 0 AS wouldCycle
 ```
 
-The natural way to write that is `EXISTS((prereq)-[:REQUIRES*]->(concept))`, but on CognoDB 0.9.x `EXISTS()` ignores the already-bound endpoints and returns true whenever *any* `REQUIRES` path exists anywhere in the graph, which rejects every legitimate link. Both `EXISTS(pattern)` and the `EXISTS { ... }` subquery form behave that way, so this uses `OPTIONAL MATCH` + `count()` instead.
+The natural way to write that is `EXISTS((prereq)-[:REQUIRES*]->(concept))`, but that returns the wrong answer here. See the note below.
+
+### CognoDB 0.9.x: pattern predicates ignore bound variables
+
+This one is worth its own section because it is quiet and, in one case, destructive.
+
+On this version, `EXISTS(...)`, `EXISTS { ... }` and negated pattern predicates like `WHERE NOT (:Concept)-[:TEACHES]->(r)` do not constrain the pattern to variables already bound in the enclosing query. They evaluate as though the endpoints were free, so they answer a much broader question than the one written.
+
+Three places it bit this project:
+
+| Written | Intended | Actually returned |
+|---|---|---|
+| `EXISTS((prereq)-[:REQUIRES*]->(concept))` | does *this* prereq reach *this* concept | true if any `REQUIRES` path exists at all, so every valid link was rejected as a cycle |
+| `WHERE NOT (:Concept)-[:TEACHES]->(r)` | resources nothing teaches | all 38 resources, including well-connected ones |
+| `WHERE NOT EXISTS { MATCH (other:Concept)-[:TEACHES]->(res) WHERE other.id <> $conceptId }` | resources only this concept teaches | guard stopped discriminating, and a delete removed a resource belonging to a different concept |
+
+The third is the dangerous one: a `DELETE` guarded by a predicate that silently stops filtering. It cost an unrelated seed resource before it was caught by an audit that compared live counts against the seed script.
+
+The workaround throughout is to express the same question with `OPTIONAL MATCH` and then aggregate, which behaves correctly:
+
+```cypher
+-- instead of EXISTS(...)
+OPTIONAL MATCH path = (prereq)-[:REQUIRES*1..]->(concept:Concept {id: $conceptId})
+RETURN count(path) > 0 AS wouldCycle
+
+-- instead of NOT EXISTS { ... }
+OPTIONAL MATCH (other:Concept)-[:TEACHES]->(res)
+WITH res, collect(DISTINCT other.id) AS teachers
+WITH res, [t IN teachers WHERE t <> $conceptId] AS otherTeachers
+WHERE size(otherTeachers) = 0
+```
+
+There is no `EXISTS` left in `queries.ts` as a result. If you are building on CognoDB, assume pattern predicates are unreliable until this is fixed, and be especially careful using one to guard a write.
 
 **4. Full graph overview.** Powers the interactive canvas:
 ```cypher
