@@ -16,7 +16,7 @@ skillgraph/
 
 ## Screenshots
 
-The full graph. Concepts are coloured by domain, grey nodes are attached notes and tests, and arrows point from a concept to what it requires.
+The full graph. Concepts are coloured by domain, grey nodes are attached notes and tests, and arrows point from a concept to what it requires. The canvas has zoom, fit-to-view and full-screen controls, and also responds to scroll-wheel zoom and drag-to-pan.
 
 ![Graph overview](docs/screenshots/overview.png)
 
@@ -31,6 +31,10 @@ Concepts can be added from the UI, with prerequisites wired up at the same time.
 Filtering to a domain narrows the canvas to those concepts and the notes attached to them, and refits the view.
 
 ![Domain filter](docs/screenshots/domain-filter.png)
+
+The layout works down to phone widths. Domain filters scroll sideways instead of wrapping, the connection badge and add button collapse to icons, and the panels stack under the canvas.
+
+![Mobile layout](docs/screenshots/mobile.png)
 
 ---
 
@@ -327,9 +331,10 @@ Remember to tighten the CORS `origin: "*"` in `backend/src/index.ts` to your dep
 ## Frontend Tour
 
 - **Top bar**: search with autocomplete, domain filter pills, and a live connection status indicator (checking / connected / offline, polled every 15s via `/api/health`).
-- **Center canvas** (`GraphCanvas.tsx`): force-directed graph, Concept nodes colored by domain, Resource nodes muted, directed arrows for `REQUIRES` edges, click any node to inspect it, selected/path nodes get a highlighted ring.
+- **Center canvas** (`GraphCanvas.tsx`): force-directed graph, Concept nodes colored by domain, Resource nodes muted, directed arrows for `REQUIRES` edges, click any node to inspect it, selected/path nodes get a highlighted ring. Overlay controls give zoom in/out, fit-to-view and full screen; the view also auto-fits on first settle and whenever the domain filter changes the visible set.
 - **Path Finder** (`PathFinder.tsx`): pick a source and target concept, get the shortest `REQUIRES` path with hop count; the path also highlights on the canvas.
 - **Concept Inspector** (`ConceptDrawer.tsx`): direct and indirect prerequisites with hop distance, concepts this one unlocks, and linked notes/tests. Everything here is editable in place: rename a concept, change its domain or difficulty, add or unlink a prerequisite, and add, edit or delete a resource. Only *direct* prerequisites offer a remove control, since a 2-hop entry is implied by the chain rather than backed by a single edge you could delete.
+- **Responsive down to phone widths.** Below `lg` the panels stack under the canvas and the page scrolls, rather than being clipped by the desktop's fixed-height layout. The header collapses from 298px to 136px on a 390px screen by scrolling the domain filters sideways and reducing the badge and add button to icons.
 - **Loading, empty and error states** throughout: skeletons while a concept loads, an empty state before anything is selected, a retry banner when the database is unreachable, and inline errors on every write.
 
 The UI is a **neobrutalist** theme: zero border radius, thick 2px dark borders, and hard 4px offset drop-shadows (no blur) that flatten to nothing on press/hover for a tactile, physical feel. See the button, card, and badge components under `frontend/src/components/ui/`. The whole palette (`frontend/src/index.css`) is a fixed set of CSS custom properties consumed by Tailwind v4's `@theme inline`. Light and dark variants are both defined there, so don't hand-edit the hex values, shadows, or radius tokens without updating both.

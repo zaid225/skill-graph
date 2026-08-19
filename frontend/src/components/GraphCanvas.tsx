@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, Frame } from "lucide-react";
 import type { GraphOverview, GraphNode, Domain } from "@/lib/api";
 import { DOMAIN_COLORS, NODE_LABEL_COLORS } from "@/lib/domain-colors";
 
@@ -26,6 +27,28 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
   const hasFitRef = useRef(false);
   const fitKeyRef = useRef<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const zoomBy = useCallback((factor: number) => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.zoom(fg.zoom() * factor, 200);
+  }, []);
+
+  const fitToData = useCallback(() => fgRef.current?.zoomToFit(400, 60), []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => void 0);
+    else el.requestFullscreen?.().catch(() => void 0);
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -84,7 +107,22 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
   if (!data) return null;
 
   return (
-    <div ref={containerRef} className="graph-canvas-wrapper h-full w-full">
+    <div ref={containerRef} className="graph-canvas-wrapper relative h-full w-full bg-card">
+      <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
+        <ControlButton label="Zoom in" onClick={() => zoomBy(1.4)}>
+          <ZoomIn className="h-4 w-4" />
+        </ControlButton>
+        <ControlButton label="Zoom out" onClick={() => zoomBy(1 / 1.4)}>
+          <ZoomOut className="h-4 w-4" />
+        </ControlButton>
+        <ControlButton label="Fit graph to view" onClick={fitToData}>
+          <Frame className="h-4 w-4" />
+        </ControlButton>
+        <ControlButton label={isFullscreen ? "Exit full screen" : "Full screen"} onClick={toggleFullscreen}>
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </ControlButton>
+      </div>
+
       <ForceGraph
         ref={fgRef}
         width={dimensions.width}
@@ -151,5 +189,27 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
         }}
       />
     </div>
+  );
+}
+
+function ControlButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="flex h-8 w-8 items-center justify-center rounded-md border-2 border-border bg-background text-foreground shadow-xs transition-all hover:bg-accent active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+    >
+      {children}
+    </button>
   );
 }

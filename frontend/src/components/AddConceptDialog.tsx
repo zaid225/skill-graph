@@ -92,7 +92,8 @@ export function AddConceptDialog({ concepts, onCreated }: AddConceptDialogProps)
     >
       <DialogTrigger asChild>
         <Button size="sm" variant="secondary" className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" /> Add Concept
+          <Plus className="h-3.5 w-3.5" />
+          Add<span className="hidden sm:inline"> Concept</span>
         </Button>
       </DialogTrigger>
 

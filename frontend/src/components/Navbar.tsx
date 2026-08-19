@@ -76,19 +76,26 @@ export function Navbar({
   const suggestions = (remoteHits ?? localHits).slice(0, 8);
 
   return (
-    <header className="flex flex-col gap-3 border-b-2 border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex flex-col gap-2 border-b-2 border-border bg-card px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex items-center gap-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-border bg-primary text-primary-foreground shadow-xs">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-primary text-primary-foreground shadow-xs sm:h-9 sm:w-9">
           <Network className="h-4 w-4" />
         </div>
-        <div>
-          <h1 className="text-sm font-bold uppercase leading-none tracking-wide">SkillGraph</h1>
-          <p className="text-xs text-muted-foreground">Learning path explorer</p>
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-bold uppercase leading-none tracking-wide">SkillGraph</h1>
+          <p className="hidden text-xs text-muted-foreground sm:block">Learning path explorer</p>
+        </div>
+
+        {/* Pinned to the identity row on phones so the actions never need a row
+            of their own. They move back to the right on large screens. */}
+        <div className="ml-auto flex items-center gap-2 lg:hidden">
+          <AddConceptDialog concepts={concepts} onCreated={onConceptCreated} />
+          <ConnectionBadge status={connectionStatus} />
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div ref={containerRef} className="relative w-full sm:w-72">
+      <div className="flex flex-1 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-center lg:justify-end">
+        <div ref={containerRef} className="relative w-full lg:w-72">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -124,11 +131,11 @@ export function Navbar({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="-mx-3 flex items-center gap-1.5 overflow-x-auto px-3 pb-0.5 sm:-mx-4 sm:px-4 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
           <button
             onClick={() => onDomainChange(null)}
             className={cn(
-              "rounded-md border-2 border-border px-2.5 py-1 text-xs font-bold uppercase tracking-wide transition-all",
+              "shrink-0 rounded-md border-2 border-border px-2.5 py-1 text-xs font-bold uppercase tracking-wide transition-all",
               activeDomain === null
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "bg-background hover:bg-accent"
@@ -141,7 +148,7 @@ export function Navbar({
               key={d}
               onClick={() => onDomainChange(activeDomain === d ? null : d)}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border-2 border-border px-2.5 py-1 text-xs font-bold uppercase tracking-wide transition-all",
+                "flex shrink-0 items-center gap-1.5 rounded-md border-2 border-border px-2.5 py-1 text-xs font-bold uppercase tracking-wide transition-all",
                 activeDomain === d ? "text-white shadow-xs" : "bg-background hover:bg-accent"
               )}
               style={activeDomain === d ? { backgroundColor: DOMAIN_COLORS[d] } : undefined}
@@ -155,9 +162,10 @@ export function Navbar({
           ))}
         </div>
 
-        <AddConceptDialog concepts={concepts} onCreated={onConceptCreated} />
-
-        <ConnectionBadge status={connectionStatus} />
+        <div className="hidden items-center gap-2 lg:flex">
+          <AddConceptDialog concepts={concepts} onCreated={onConceptCreated} />
+          <ConnectionBadge status={connectionStatus} />
+        </div>
       </div>
     </header>
   );
@@ -166,21 +174,24 @@ export function Navbar({
 function ConnectionBadge({ status }: { status: ConnectionStatus }) {
   if (status === "checking") {
     return (
-      <Badge variant="secondary" className="gap-1">
-        <Loader2 className="h-3 w-3 animate-spin" /> Checking
+      <Badge variant="secondary" className="gap-1" title="Checking the database connection">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span className="hidden sm:inline">Checking</span>
       </Badge>
     );
   }
   if (status === "connected") {
     return (
-      <Badge className="gap-1 border-border bg-emerald-400 text-emerald-950">
-        <Wifi className="h-3 w-3" /> Connected
+      <Badge className="gap-1 border-border bg-emerald-400 text-emerald-950" title="Connected to CognoDB">
+        <Wifi className="h-3 w-3" />
+        <span className="hidden sm:inline">Connected</span>
       </Badge>
     );
   }
   return (
-    <Badge variant="destructive" className="gap-1">
-      <WifiOff className="h-3 w-3" /> Offline
+    <Badge variant="destructive" className="gap-1" title="CognoDB unreachable">
+      <WifiOff className="h-3 w-3" />
+      <span className="hidden sm:inline">Offline</span>
     </Badge>
   );
 }

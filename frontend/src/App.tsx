@@ -107,8 +107,8 @@ export default function App() {
         </div>
       )}
 
-      <main className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[1fr_340px]">
-        <div className="relative min-h-[320px] overflow-hidden rounded-lg border-2 border-border bg-card shadow">
+      <main className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[1fr_340px] lg:overflow-hidden">
+        <div className="relative h-[55vh] overflow-hidden rounded-lg border-2 border-border bg-card shadow lg:h-auto lg:min-h-[320px]">
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60">
               <div className="w-full max-w-sm space-y-3 p-6">
@@ -140,7 +140,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="flex flex-col gap-4 overflow-y-auto">
+        <div className="flex flex-col gap-4 lg:overflow-y-auto">
           <PathFinder
             key={pathFinderKey}
             concepts={concepts}
