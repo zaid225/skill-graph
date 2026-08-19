@@ -170,26 +170,78 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
 
           const showLabel = n.label === "Concept" ? globalScale > 0.45 : globalScale > 1.6;
           if (showLabel) {
-            const fontSize = (n.label === "Concept" ? 11 : 9) / globalScale;
-            ctx.font = `${n.label === "Concept" ? "bold " : ""}${fontSize}px sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "top";
-
-            // Knock a light plate out behind the text so labels stay readable
-            // where they overlap edges or other nodes.
-            const padding = 2 / globalScale;
-            const width = ctx.measureText(label).width;
-            const top = (node.y ?? 0) + radius + padding;
-            ctx.fillStyle = "rgba(255, 253, 250, 0.75)";
-            ctx.fillRect((node.x ?? 0) - width / 2 - padding, top, width + padding * 2, fontSize + padding);
-
-            ctx.fillStyle = n.label === "Concept" ? "#2d2216" : "rgba(45,34,22,0.65)";
-            ctx.fillText(label, node.x ?? 0, top);
+            drawLabel(ctx, {
+              text: label,
+              x: node.x ?? 0,
+              y: node.y ?? 0,
+              offset: radius,
+              globalScale,
+              bold: n.label === "Concept",
+              basePx: n.label === "Concept" ? 11 : 9.5,
+              color: n.label === "Concept" ? "#2d2216" : "rgba(45,34,22,0.7)",
+            });
           }
         }}
       />
     </div>
   );
+}
+
+interface LabelSpec {
+  text: string;
+  x: number;
+  y: number;
+  offset: number;
+  globalScale: number;
+  bold: boolean;
+  basePx: number;
+  color: string;
+}
+
+/**
+ * Draws a node label in screen space rather than graph space.
+ *
+ * The obvious approach is `font = (11 / globalScale) + "px"` and let the canvas
+ * transform scale it back up. That reads fine at 1x but falls apart zoomed in:
+ * at 8x the font is about 1.4px, browsers rasterise sub-pixel type badly, and
+ * the transform then magnifies the mush. Labels end up visibly blurry exactly
+ * when someone has zoomed in to read them.
+ *
+ * So we reset the transform, place the text at the node's projected screen
+ * position, and ask for a real pixel size. `getTransform().a` is devicePixelRatio
+ * multiplied by the zoom, so dividing by globalScale recovers the DPR and keeps
+ * the text sharp on retina displays too.
+ *
+ * Size grows with the square root of zoom, clamped, so text gets bigger as you
+ * zoom in without ever running away or dropping below legibility.
+ */
+function drawLabel(ctx: CanvasRenderingContext2D, spec: LabelSpec) {
+  const { text, x, y, offset, globalScale, bold, basePx, color } = spec;
+
+  const t = ctx.getTransform();
+  const dpr = t.a / globalScale || 1;
+  const fontPx = Math.min(24, Math.max(9, basePx * Math.sqrt(globalScale)));
+
+  // Project the node's graph coords into CSS pixels.
+  const screenX = (t.a * x + t.e) / dpr;
+  const screenY = (t.d * y + t.f) / dpr;
+  const top = screenY + offset * globalScale + 3;
+
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `${bold ? "bold " : ""}${fontPx}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  // Plate behind the text so labels survive crossing an edge or another node.
+  const pad = 3;
+  const width = ctx.measureText(text).width;
+  ctx.fillStyle = "rgba(255, 253, 250, 0.82)";
+  ctx.fillRect(screenX - width / 2 - pad, top - 1, width + pad * 2, fontPx + 2);
+
+  ctx.fillStyle = color;
+  ctx.fillText(text, screenX, top);
+  ctx.restore();
 }
 
 function ControlButton({
