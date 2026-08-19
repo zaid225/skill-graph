@@ -24,6 +24,7 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
   const fgRef = useRef<any>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const hasFitRef = useRef(false);
+  const fitKeyRef = useRef<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   useEffect(() => {
@@ -42,11 +43,26 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
   const graphData = useMemo(() => {
     if (!data) return { nodes: [], links: [] };
 
+    const visibleConceptIds = new Set(
+      data.nodes
+        .filter((n) => n.label === "Concept" && (!activeDomain || n.domain === activeDomain))
+        .map((n) => n.id)
+    );
+
+    // A resource only earns a place on the canvas while the concept that
+    // teaches it is visible. Without this check, filtering to one domain
+    // leaves every other domain's notes floating as unconnected dots.
+    const taughtBy = new Map<string, string>();
+    for (const e of data.edges) {
+      if (e.type === "TEACHES") taughtBy.set(e.target, e.source);
+    }
+
     const visibleNodeIds = new Set<string>();
     const nodes: FGNode[] = data.nodes
       .filter((n) => {
-        if (activeDomain && n.label === "Concept" && n.domain !== activeDomain) return false;
-        return true;
+        if (n.label === "Concept") return visibleConceptIds.has(n.id);
+        const parent = taughtBy.get(n.id);
+        return parent !== undefined && visibleConceptIds.has(parent);
       })
       .map((n) => {
         visibleNodeIds.add(n.id);
@@ -84,10 +100,13 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
         }
         cooldownTicks={80}
         onEngineStop={() => {
-          // Fit once on first settle. Re-fitting later would yank the viewport
-          // out from under someone who has panned or zoomed themselves.
-          if (hasFitRef.current) return;
+          // Fit on first settle, and again whenever the domain filter changes
+          // the visible set. Refitting on every settle would yank the viewport
+          // away from someone who has panned or zoomed themselves.
+          const key = activeDomain ?? "all";
+          if (hasFitRef.current && fitKeyRef.current === key) return;
           hasFitRef.current = true;
+          fitKeyRef.current = key;
           fgRef.current?.zoomToFit(400, 60);
         }}
         onNodeClick={(node: FGNode) => onNodeClick(node as GraphNode)}

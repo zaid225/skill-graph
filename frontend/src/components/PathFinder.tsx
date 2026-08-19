@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Route, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,73 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
   const [error, setError] = useState<string | null>(null);
   const [path, setPath] = useState<LearningPathStep[] | null>(null);
 
+  // Reachability for whichever end was picked first, so the other dropdown can
+  // grey out pairs with no possible path instead of letting someone choose a
+  // combination and hit a dead end.
+  const [reach, setReach] = useState<{ from: string; targets: Set<string>; sources: Set<string> } | null>(null);
+  const [reachLoading, setReachLoading] = useState(false);
+
+  const anchor = source || target;
+
+  useEffect(() => {
+    if (!anchor) {
+      setReach(null);
+      return;
+    }
+    if (reach?.from === anchor) return;
+
+    let cancelled = false;
+    setReachLoading(true);
+    api
+      .reachable(anchor)
+      .then((r) => {
+        if (cancelled) return;
+        setReach({ from: anchor, targets: new Set(r.validTargets), sources: new Set(r.validSources) });
+      })
+      .catch(() => {
+        // Not fatal. The pickers just stay unfiltered and the path query still
+        // reports whether a route exists.
+        if (!cancelled) setReach(null);
+      })
+      .finally(() => {
+        if (!cancelled) setReachLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [anchor, reach?.from]);
+
+  const targetOptions = useMemo(() => {
+    if (!source || !reach || reach.from !== source) return concepts.map((c) => ({ concept: c, ok: true }));
+    return concepts.map((c) => ({ concept: c, ok: c.id !== source && reach.targets.has(c.id) }));
+  }, [concepts, source, reach]);
+
+  const sourceOptions = useMemo(() => {
+    if (source || !target || !reach || reach.from !== target) {
+      return concepts.map((c) => ({ concept: c, ok: true }));
+    }
+    return concepts.map((c) => ({ concept: c, ok: c.id !== target && reach.sources.has(c.id) }));
+  }, [concepts, source, target, reach]);
+
+  const reachableTargetCount = targetOptions.filter((o) => o.ok).length;
+
+  function changeSource(next: string) {
+    setSource(next);
+    setPath(null);
+    setError(null);
+    onPathFound(null);
+    // Drop a target the new source cannot reach.
+    if (next && target && reach?.from === next && !reach.targets.has(target)) setTarget("");
+  }
+
+  function changeTarget(next: string) {
+    setTarget(next);
+    setPath(null);
+    setError(null);
+    onPathFound(null);
+  }
+
   async function findPath() {
     if (!source || !target) return;
     setLoading(true);
@@ -30,9 +97,7 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
       onPathFound(res.path);
     } catch (err) {
       if (err instanceof ApiError && err.code === "NO_PATH_FOUND") {
-        setError(
-          "These aren't connected by prerequisites. The target doesn't build on what you already know, so try a different pair."
-        );
+        setError("These aren't connected by prerequisites. Try a different pair.");
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -52,17 +117,25 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ConceptSelect label="I already know" value={source} onChange={setSource} concepts={concepts} />
-        <ConceptSelect label="I want to learn" value={target} onChange={setTarget} concepts={concepts} />
+        <ConceptSelect label="I already know" value={source} onChange={changeSource} options={sourceOptions} />
+        <ConceptSelect
+          label="I want to learn"
+          value={target}
+          onChange={changeTarget}
+          options={targetOptions}
+          hint={
+            source && !reachLoading
+              ? reachableTargetCount === 0
+                ? "nothing builds on that yet"
+                : `${reachableTargetCount} reachable`
+              : undefined
+          }
+        />
 
         <Button onClick={findPath} disabled={!source || !target || source === target || loading} className="w-full">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}
           Find Shortest Path
         </Button>
-
-        {source && target && source === target && (
-          <p className="text-xs text-muted-foreground">Pick two different concepts.</p>
-        )}
 
         {error && (
           <div className="flex items-start gap-2 rounded-md border-2 border-border bg-destructive/15 p-2 text-xs font-medium text-destructive">
@@ -95,31 +168,53 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
   );
 }
 
+interface Option {
+  concept: Concept;
+  ok: boolean;
+}
+
 function ConceptSelect({
   label,
   value,
   onChange,
-  concepts,
+  options,
+  hint,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  concepts: Concept[];
+  options: Option[];
+  hint?: string;
 }) {
+  const reachable = options.filter((o) => o.ok);
+  const unreachable = options.filter((o) => !o.ok);
+
   return (
     <label className="block space-y-1">
-      <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
+        {hint && <span className="text-xs font-medium text-muted-foreground">{hint}</span>}
+      </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="flex h-9 w-full rounded-md border-2 border-input bg-background px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <option value="">Select a concept…</option>
-        {concepts.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
+        <option value="">Select a concept...</option>
+        {reachable.map((o) => (
+          <option key={o.concept.id} value={o.concept.id}>
+            {o.concept.name}
           </option>
         ))}
+        {unreachable.length > 0 && (
+          <optgroup label="No prerequisite path">
+            {unreachable.map((o) => (
+              <option key={o.concept.id} value={o.concept.id} disabled>
+                {o.concept.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </label>
   );

@@ -28,45 +28,39 @@ function toResource(node: any): ResourceNode {
 // ---------------------------------------------------------------------------
 export async function getGraphOverview(env: Env): Promise<GraphOverviewResponse> {
   return withSession(env, async (session: Session) => {
-    const result = await session.run(
-      `
-      MATCH (n:Concept)
-      OPTIONAL MATCH (n)-[r:REQUIRES]->(m:Concept)
-      RETURN n, r, m
-      LIMIT 200
-      `
-    );
-
+    // Nodes and edges are fetched separately on purpose. Doing it in one
+    // MATCH + OPTIONAL MATCH returns a row per edge, so a LIMIT there counts
+    // rows rather than nodes and starts dropping concepts mid-way once the
+    // graph grows past the cap.
     const nodesById = new Map<string, GraphOverviewResponse["nodes"][number]>();
     const edges: GraphOverviewResponse["edges"] = [];
 
-    for (const record of result.records) {
-      const n = record.get("n");
-      const c = toConcept(n);
+    const conceptRows = await session.run(`MATCH (c:Concept) RETURN c LIMIT 1000`);
+    for (const record of conceptRows.records) {
+      const c = toConcept(record.get("c"));
       nodesById.set(c.id, { ...c, label: "Concept" });
-
-      const m = record.get("m");
-      const r = record.get("r");
-      if (m && r) {
-        const target = toConcept(m);
-        nodesById.set(target.id, { ...target, label: "Concept" });
-        edges.push({ source: c.id, target: target.id, type: "REQUIRES" });
-      }
     }
 
-    // Pull in Resource nodes and their TEACHES edges too, so the canvas can
-    // render the whole ecosystem, not just the prerequisite backbone.
-    const resourceResult = await session.run(
+    const resourceRows = await session.run(`MATCH (r:Resource) RETURN r LIMIT 1000`);
+    for (const record of resourceRows.records) {
+      const r = toResource(record.get("r"));
+      nodesById.set(r.id, { ...r, label: "Resource" });
+    }
+
+    const edgeRows = await session.run(
       `
-      MATCH (c:Concept)-[:TEACHES]->(res:Resource)
-      RETURN c.id AS conceptId, res AS resource
-      LIMIT 200
+      MATCH (a:Concept)-[rel:REQUIRES|TEACHES]->(b)
+      RETURN a.id AS source, b.id AS target, type(rel) AS type
+      LIMIT 4000
       `
     );
-    for (const record of resourceResult.records) {
-      const res = toResource(record.get("resource"));
-      nodesById.set(res.id, { ...res, label: "Resource" });
-      edges.push({ source: record.get("conceptId"), target: res.id, type: "TEACHES" });
+    for (const record of edgeRows.records) {
+      const source = record.get("source");
+      const target = record.get("target");
+      // Skip dangling edges rather than handing the canvas a link whose
+      // endpoint was cut off by the node limits above.
+      if (!nodesById.has(source) || !nodesById.has(target)) continue;
+      edges.push({ source, target, type: record.get("type") });
     }
 
     return { nodes: Array.from(nodesById.values()), edges };
@@ -366,5 +360,163 @@ export async function addResource(
       { conceptId, id, title: input.title.trim(), url: input.url.trim(), type: input.type }
     );
     return toResource(r.records[0].get("res"));
+  });
+}
+
+/**
+ * Which concepts can be used at each end of a path search involving this one?
+ *
+ * Lets the UI grey out impossible pairings instead of letting someone pick a
+ * combination and get a dead end. Bounds match getShortestLearningPath, so a
+ * pair the picker offers is always a pair the path query can actually solve.
+ *
+ * validTargets: goals reachable if the learner already knows this concept,
+ * i.e. everything that transitively requires it.
+ * validSources: starting points that lead here if this concept is the goal,
+ * i.e. everything it transitively requires.
+ */
+export async function getReachability(
+  env: Env,
+  conceptId: string
+): Promise<{ validTargets: string[]; validSources: string[] }> {
+  return withSession(env, async (session) => {
+    const result = await session.run(
+      `
+      MATCH (c:Concept {id: $conceptId})
+      OPTIONAL MATCH (dependent:Concept)-[:REQUIRES*1..10]->(c)
+      WITH c, collect(DISTINCT dependent.id) AS validTargets
+      OPTIONAL MATCH (c)-[:REQUIRES*1..10]->(prereq:Concept)
+      RETURN validTargets, collect(DISTINCT prereq.id) AS validSources
+      `,
+      { conceptId }
+    );
+    if (result.records.length === 0) return { validTargets: [], validSources: [] };
+    const row = result.records[0];
+    return {
+      validTargets: (row.get("validTargets") as string[]).filter(Boolean),
+      validSources: (row.get("validSources") as string[]).filter(Boolean),
+    };
+  });
+}
+
+export interface ConceptUpdate {
+  name?: string;
+  description?: string;
+  domain?: Domain;
+  difficulty?: ConceptNode["difficulty"];
+}
+
+/**
+ * Updates a concept's display fields. The id is deliberately left alone even
+ * when the name changes: it is the key every REQUIRES and TEACHES edge points
+ * at, so re-slugging a rename would orphan the node's relationships.
+ */
+export async function updateConcept(
+  env: Env,
+  conceptId: string,
+  fields: ConceptUpdate
+): Promise<ConceptNode | null> {
+  return withWriteSession(env, async (session) => {
+    const result = await session.run(
+      `
+      MATCH (c:Concept {id: $conceptId})
+      SET c.name        = coalesce($name, c.name),
+          c.description = coalesce($description, c.description),
+          c.domain      = coalesce($domain, c.domain),
+          c.difficulty  = coalesce($difficulty, c.difficulty)
+      RETURN c
+      `,
+      {
+        conceptId,
+        name: fields.name ?? null,
+        description: fields.description ?? null,
+        domain: fields.domain ?? null,
+        difficulty: fields.difficulty ?? null,
+      }
+    );
+    if (result.records.length === 0) return null;
+    return toConcept(result.records[0].get("c"));
+  });
+}
+
+/** Removes a concept along with its edges and any resources only it taught. */
+export async function deleteConcept(env: Env, conceptId: string): Promise<void> {
+  await withWriteSession(env, async (session) => {
+    await session.executeWrite(async (tx) => {
+      // Resources exist to teach a concept, so one left with no concept is
+      // unreachable in the UI. Clean those up rather than leaking orphans.
+      await tx.run(
+        `
+        MATCH (c:Concept {id: $conceptId})-[:TEACHES]->(res:Resource)
+        WHERE NOT EXISTS { MATCH (other:Concept)-[:TEACHES]->(res) WHERE other.id <> $conceptId }
+        DETACH DELETE res
+        `,
+        { conceptId }
+      );
+      await tx.run(`MATCH (c:Concept {id: $conceptId}) DETACH DELETE c`, { conceptId });
+    });
+  });
+}
+
+export async function removePrerequisite(
+  env: Env,
+  conceptId: string,
+  prereqId: string
+): Promise<void> {
+  await withWriteSession(env, async (session) => {
+    await session.run(
+      `
+      MATCH (c:Concept {id: $conceptId})-[r:REQUIRES]->(p:Concept {id: $prereqId})
+      DELETE r
+      `,
+      { conceptId, prereqId }
+    );
+  });
+}
+
+export interface ResourceUpdate {
+  title?: string;
+  url?: string;
+  type?: ResourceNode["type"];
+}
+
+export async function updateResource(
+  env: Env,
+  resourceId: string,
+  fields: ResourceUpdate
+): Promise<ResourceNode | null> {
+  return withWriteSession(env, async (session) => {
+    const result = await session.run(
+      `
+      MATCH (res:Resource {id: $resourceId})
+      SET res.title = coalesce($title, res.title),
+          res.url   = coalesce($url, res.url),
+          res.type  = coalesce($type, res.type)
+      RETURN res
+      `,
+      {
+        resourceId,
+        title: fields.title ?? null,
+        url: fields.url ?? null,
+        type: fields.type ?? null,
+      }
+    );
+    if (result.records.length === 0) return null;
+    return toResource(result.records[0].get("res"));
+  });
+}
+
+export async function deleteResource(env: Env, resourceId: string): Promise<void> {
+  await withWriteSession(env, async (session) => {
+    await session.run(`MATCH (res:Resource {id: $resourceId}) DETACH DELETE res`, { resourceId });
+  });
+}
+
+export async function resourceExists(env: Env, resourceId: string): Promise<boolean> {
+  return withSession(env, async (session) => {
+    const r = await session.run(`MATCH (res:Resource {id: $resourceId}) RETURN count(res) AS n`, {
+      resourceId,
+    });
+    return r.records[0].get("n") > 0;
   });
 }

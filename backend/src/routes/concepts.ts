@@ -13,6 +13,13 @@ import {
   createConcept,
   addPrerequisite,
   addResource,
+  getReachability,
+  updateConcept,
+  deleteConcept,
+  removePrerequisite,
+  updateResource,
+  deleteResource,
+  resourceExists,
 } from "../db/queries";
 
 export const conceptsRoute = new Hono<{ Bindings: Env }>();
@@ -188,12 +195,148 @@ conceptsRoute.post("/:id/resources", async (c) => {
   return c.json({ resource }, 201);
 });
 
-/** Clamp the requested hop count to a sane [1, 6] range, this value is
- * interpolated directly into the Cypher variable-length pattern (Cypher has
- * no way to parameterize `*1..N`), so we must validate it ourselves rather
- * than trust the query string. */
+/** GET /api/concepts/:id/reachable, which pairings the path finder can solve */
+conceptsRoute.get("/:id/reachable", async (c) => {
+  const id = c.req.param("id");
+  if (!(await conceptExists(c.env, id))) {
+    return c.json({ error: "NOT_FOUND", message: `No concept with id "${id}".` }, 404);
+  }
+  const reachability = await getReachability(c.env, id);
+  return c.json({ conceptId: id, ...reachability });
+});
+
+/** PATCH /api/concepts/:id, edit the display fields (the id never changes) */
+conceptsRoute.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  if (!body) {
+    return c.json({ error: "BAD_REQUEST", message: "Expected a JSON body." }, 400);
+  }
+
+  const fields: Record<string, unknown> = {};
+
+  if (body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (name.length < 2 || name.length > 80) {
+      return c.json({ error: "BAD_REQUEST", message: "Name must be 2-80 characters." }, 400);
+    }
+    fields.name = name;
+  }
+  if (body.description !== undefined) {
+    const description = typeof body.description === "string" ? body.description.trim() : "";
+    if (description.length < 10 || description.length > 400) {
+      return c.json({ error: "BAD_REQUEST", message: "Description must be 10-400 characters." }, 400);
+    }
+    fields.description = description;
+  }
+  if (body.domain !== undefined) {
+    if (!DOMAINS.includes(body.domain)) {
+      return c.json({ error: "BAD_REQUEST", message: `Domain must be one of: ${DOMAINS.join(", ")}.` }, 400);
+    }
+    fields.domain = body.domain;
+  }
+  if (body.difficulty !== undefined) {
+    if (!DIFFICULTIES.includes(body.difficulty)) {
+      return c.json({ error: "BAD_REQUEST", message: `Difficulty must be one of: ${DIFFICULTIES.join(", ")}.` }, 400);
+    }
+    fields.difficulty = body.difficulty;
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return c.json({ error: "BAD_REQUEST", message: "Nothing to update." }, 400);
+  }
+
+  const concept = await updateConcept(c.env, id, fields);
+  if (!concept) {
+    return c.json({ error: "NOT_FOUND", message: `No concept with id "${id}".` }, 404);
+  }
+  return c.json({ concept });
+});
+
+/** DELETE /api/concepts/:id */
+conceptsRoute.delete("/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!(await conceptExists(c.env, id))) {
+    return c.json({ error: "NOT_FOUND", message: `No concept with id "${id}".` }, 404);
+  }
+  await deleteConcept(c.env, id);
+  return c.json({ deleted: id });
+});
+
+/** DELETE /api/concepts/:id/prerequisites/:prereqId */
+conceptsRoute.delete("/:id/prerequisites/:prereqId", async (c) => {
+  const conceptId = c.req.param("id");
+  const prereqId = c.req.param("prereqId");
+  await removePrerequisite(c.env, conceptId, prereqId);
+  return c.json({ conceptId, prerequisiteId: prereqId, removed: true });
+});
+
+/** PATCH /api/concepts/:id/resources/:resourceId */
+conceptsRoute.patch("/:id/resources/:resourceId", async (c) => {
+  const resourceId = c.req.param("resourceId");
+  const body = await c.req.json().catch(() => null);
+  if (!body) {
+    return c.json({ error: "BAD_REQUEST", message: "Expected a JSON body." }, 400);
+  }
+
+  const fields: Record<string, unknown> = {};
+
+  if (body.title !== undefined) {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (title.length < 2 || title.length > 120) {
+      return c.json({ error: "BAD_REQUEST", message: "Title must be 2-120 characters." }, 400);
+    }
+    fields.title = title;
+  }
+  if (body.url !== undefined) {
+    const url = typeof body.url === "string" ? body.url.trim() : "";
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      return c.json({ error: "BAD_REQUEST", message: "URL must start with http:// or https://." }, 400);
+    }
+    fields.url = url;
+  }
+  if (body.type !== undefined) {
+    if (!RESOURCE_TYPES.includes(body.type)) {
+      return c.json({ error: "BAD_REQUEST", message: `Type must be one of: ${RESOURCE_TYPES.join(", ")}.` }, 400);
+    }
+    fields.type = body.type;
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return c.json({ error: "BAD_REQUEST", message: "Nothing to update." }, 400);
+  }
+  if (!(await resourceExists(c.env, resourceId))) {
+    return c.json({ error: "NOT_FOUND", message: `No resource with id "${resourceId}".` }, 404);
+  }
+
+  const resource = await updateResource(c.env, resourceId, fields);
+  return c.json({ resource });
+});
+
+/** DELETE /api/concepts/:id/resources/:resourceId */
+conceptsRoute.delete("/:id/resources/:resourceId", async (c) => {
+  const resourceId = c.req.param("resourceId");
+  if (!(await resourceExists(c.env, resourceId))) {
+    return c.json({ error: "NOT_FOUND", message: `No resource with id "${resourceId}".` }, 404);
+  }
+  await deleteResource(c.env, resourceId);
+  return c.json({ deleted: resourceId });
+});
+
+
+/**
+ * Clamp the requested hop count. This value gets interpolated straight into
+ * the Cypher variable-length pattern because `*1..N` cannot be parameterized,
+ * so it has to be validated here rather than trusted from the query string.
+ *
+ * The ceiling matches the bound in getShortestLearningPath. They were 6 and 10
+ * for a while, which meant the prerequisite tree silently stopped one hop
+ * short of the deepest chains in the graph.
+ */
+const MAX_HOPS = 10;
+
 function clampHops(raw: string | undefined): number {
-  const n = Number.parseInt(raw ?? "4", 10);
-  if (Number.isNaN(n)) return 4;
-  return Math.min(Math.max(n, 1), 6);
+  const n = Number.parseInt(raw ?? "6", 10);
+  if (Number.isNaN(n)) return 6;
+  return Math.min(Math.max(n, 1), MAX_HOPS);
 }

@@ -71,6 +71,9 @@ export default function App() {
   const handleFindPathTo = (conceptId: string) => {
     setPathFinderTarget(conceptId);
     setPathFinderKey((k) => k + 1);
+    // The remounted PathFinder starts with no result, so clear the highlight
+    // it left behind rather than leaving a stale path drawn on the canvas.
+    setHighlightedPath(undefined);
   };
 
   const handlePathFound = (path: LearningPathStep[] | null) => {
@@ -145,7 +148,13 @@ export default function App() {
             onPathFound={handlePathFound}
           />
           <div className="min-h-[300px] flex-1">
-            <ConceptDrawer conceptId={selectedId} onFindPathTo={handleFindPathTo} onSelectConcept={setSelectedId} />
+            <ConceptDrawer
+              conceptId={selectedId}
+              allConcepts={concepts}
+              onFindPathTo={handleFindPathTo}
+              onSelectConcept={(id) => setSelectedId(id || null)}
+              onGraphChanged={loadGraph}
+            />
           </div>
         </div>
       </main>

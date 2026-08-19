@@ -12,7 +12,7 @@ app.use(
   "*",
   cors({
     origin: "*", // tighten to your deployed frontend origin in production
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type"],
   })
 );

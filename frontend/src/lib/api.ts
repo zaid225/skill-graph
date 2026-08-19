@@ -58,10 +58,17 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = body === undefined
-    ? {}
-    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+type Method = "GET" | "POST" | "PATCH" | "DELETE";
+
+async function request<T>(
+  path: string,
+  body?: unknown,
+  method: Method = body === undefined ? "GET" : "POST"
+): Promise<T> {
+  const init: RequestInit =
+    body === undefined
+      ? { method }
+      : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 
   let res: Response;
   try {
@@ -126,7 +133,52 @@ export const api = {
 
   addResource: (conceptId: string, input: NewResourceInput) =>
     request<{ resource: Resource }>(`/api/concepts/${encodeURIComponent(conceptId)}/resources`, input),
+
+  reachable: (id: string) =>
+    request<{ conceptId: string; validTargets: string[]; validSources: string[] }>(
+      `/api/concepts/${encodeURIComponent(id)}/reachable`
+    ),
+
+  updateConcept: (id: string, fields: ConceptUpdate) =>
+    request<{ concept: Concept }>(`/api/concepts/${encodeURIComponent(id)}`, fields, "PATCH"),
+
+  deleteConcept: (id: string) =>
+    request<{ deleted: string }>(`/api/concepts/${encodeURIComponent(id)}`, undefined, "DELETE"),
+
+  removePrerequisite: (conceptId: string, prerequisiteId: string) =>
+    request<{ removed: boolean }>(
+      `/api/concepts/${encodeURIComponent(conceptId)}/prerequisites/${encodeURIComponent(prerequisiteId)}`,
+      undefined,
+      "DELETE"
+    ),
+
+  updateResource: (conceptId: string, resourceId: string, fields: ResourceUpdate) =>
+    request<{ resource: Resource }>(
+      `/api/concepts/${encodeURIComponent(conceptId)}/resources/${encodeURIComponent(resourceId)}`,
+      fields,
+      "PATCH"
+    ),
+
+  deleteResource: (conceptId: string, resourceId: string) =>
+    request<{ deleted: string }>(
+      `/api/concepts/${encodeURIComponent(conceptId)}/resources/${encodeURIComponent(resourceId)}`,
+      undefined,
+      "DELETE"
+    ),
 };
+
+export interface ConceptUpdate {
+  name?: string;
+  description?: string;
+  domain?: Domain;
+  difficulty?: Concept["difficulty"];
+}
+
+export interface ResourceUpdate {
+  title?: string;
+  url?: string;
+  type?: Resource["type"];
+}
 
 export interface NewConceptInput {
   name: string;

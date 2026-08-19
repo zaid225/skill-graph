@@ -24,9 +24,13 @@ Picking a start and a goal runs a `shortestPath` traversal and returns the study
 
 ![Path finder and concept inspector](docs/screenshots/path-finder.png)
 
-Concepts can be added from the UI, with prerequisites wired up at the same time.
+Concepts can be added from the UI, with prerequisites wired up at the same time. Existing ones can be renamed, re-tagged, relinked or deleted from the inspector.
 
 ![Add concept dialog](docs/screenshots/add-concept.png)
+
+Filtering to a domain narrows the canvas to those concepts and the notes attached to them, and refits the view.
+
+![Domain filter](docs/screenshots/domain-filter.png)
 
 ---
 
@@ -154,14 +158,35 @@ See [`backend/src/db/queries.ts`](backend/src/db/queries.ts) for the complete, t
 | `GET /api/concepts/:id/unlocks?hops=4` | Multi-hop reverse traversal: concepts that depend on this one. |
 | `GET /api/concepts/:id/resources` | Notes/tests linked to a concept. |
 | `GET /api/paths/shortest?source=&target=` | Shortest `REQUIRES` path between two concepts. |
+| `GET /api/concepts/:id/reachable` | Which concepts can pair with this one in a path search. |
 | `POST /api/concepts` | Create a concept, optionally with prerequisites. |
+| `PATCH /api/concepts/:id` | Edit name, description, domain or difficulty. |
+| `DELETE /api/concepts/:id` | Remove a concept, its edges, and any resources only it taught. |
 | `POST /api/concepts/:id/prerequisites` | Link an existing concept to a prerequisite. |
+| `DELETE /api/concepts/:id/prerequisites/:prereqId` | Unlink a prerequisite. |
 | `POST /api/concepts/:id/resources` | Attach a note, test, article, video or course. |
+| `PATCH /api/concepts/:id/resources/:resourceId` | Edit a resource. |
+| `DELETE /api/concepts/:id/resources/:resourceId` | Delete a resource. |
 
 Writes are validated server-side before they touch the graph: field lengths and
 enums are checked, duplicate slugs return `409 ALREADY_EXISTS`, unknown
 prerequisite ids are rejected rather than silently dropped, and any link that
 would close a prerequisite loop returns `409 WOULD_CREATE_CYCLE`.
+
+Two details worth calling out:
+
+**A concept's `id` never changes, even on rename.** The id is the key every
+`REQUIRES` and `TEACHES` edge points at, so re-slugging it on a rename would
+orphan the node's relationships. `PATCH` updates the display name and leaves
+the id alone, the same way a permalink survives a title edit.
+
+**`/reachable` exists to keep the path finder honest.** It returns every
+concept that transitively requires this one (valid goals if you already know
+it) and everything it transitively requires (valid starting points if it is
+your goal). The UI uses that to disable impossible pairings in the dropdowns
+rather than letting someone pick a combination and hit a "no path" dead end.
+Its hop bound matches the one in the shortest-path query, so a pair the picker
+offers is always a pair the path query can actually solve.
 
 Every route that touches CognoDB is wrapped so a connectivity failure returns:
 ```json
@@ -272,7 +297,8 @@ Remember to tighten the CORS `origin: "*"` in `backend/src/index.ts` to your dep
 - **Top bar**: search with autocomplete, domain filter pills, and a live connection status indicator (checking / connected / offline, polled every 15s via `/api/health`).
 - **Center canvas** (`GraphCanvas.tsx`): force-directed graph, Concept nodes colored by domain, Resource nodes muted, directed arrows for `REQUIRES` edges, click any node to inspect it, selected/path nodes get a highlighted ring.
 - **Path Finder** (`PathFinder.tsx`): pick a source and target concept, get the shortest `REQUIRES` path with hop count; the path also highlights on the canvas.
-- **Concept Inspector** (`ConceptDrawer.tsx`): direct + indirect prerequisites (with hop distance), concepts this one unlocks, and linked notes/tests; loading skeletons and empty/error states throughout.
+- **Concept Inspector** (`ConceptDrawer.tsx`): direct and indirect prerequisites with hop distance, concepts this one unlocks, and linked notes/tests. Everything here is editable in place: rename a concept, change its domain or difficulty, add or unlink a prerequisite, and add, edit or delete a resource. Only *direct* prerequisites offer a remove control, since a 2-hop entry is implied by the chain rather than backed by a single edge you could delete.
+- **Loading, empty and error states** throughout: skeletons while a concept loads, an empty state before anything is selected, a retry banner when the database is unreachable, and inline errors on every write.
 
 The UI is a **neobrutalist** theme: zero border radius, thick 2px dark borders, and hard 4px offset drop-shadows (no blur) that flatten to nothing on press/hover for a tactile, physical feel. See the button, card, and badge components under `frontend/src/components/ui/`. The whole palette (`frontend/src/index.css`) is a fixed set of CSS custom properties consumed by Tailwind v4's `@theme inline`. Light and dark variants are both defined there, so don't hand-edit the hex values, shadows, or radius tokens without updating both.
 

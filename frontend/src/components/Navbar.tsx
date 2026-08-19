@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AddConceptDialog } from "@/components/AddConceptDialog";
 import { cn } from "@/lib/utils";
-import type { Concept, Domain } from "@/lib/api";
+import { api, type Concept, type Domain } from "@/lib/api";
 import { DOMAIN_COLORS } from "@/lib/domain-colors";
 
 const DOMAINS: Domain[] = ["Mathematics", "Physics", "Chemistry", "Biology", "Computer Science", "Design"];
@@ -42,9 +42,38 @@ export function Navbar({
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  const suggestions = query.trim()
-    ? concepts.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8)
+  // Local list first so typing feels instant, then the server's search takes
+  // over once it answers. It also matches on description, which the client
+  // list cannot do without shipping every description to the browser.
+  const [remoteHits, setRemoteHits] = useState<Concept[] | null>(null);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setRemoteHits(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .listConcepts({ q })
+        .then((r) => {
+          if (!cancelled) setRemoteHits(r.concepts);
+        })
+        .catch(() => {
+          if (!cancelled) setRemoteHits(null);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const localHits = query.trim()
+    ? concepts.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
     : [];
+  const suggestions = (remoteHits ?? localHits).slice(0, 8);
 
   return (
     <header className="flex flex-col gap-3 border-b-2 border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
