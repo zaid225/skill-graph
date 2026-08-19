@@ -6,6 +6,7 @@ import { PathFinder } from "@/components/PathFinder";
 import { ConceptDrawer } from "@/components/ConceptDrawer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Toaster } from "@/components/ui/sonner";
 import { api, ApiError, type Concept, type Domain, type GraphNode, type GraphOverview, type LearningPathStep } from "@/lib/api";
 
 export default function App() {
@@ -158,6 +159,8 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <Toaster />
     </div>
   );
 }

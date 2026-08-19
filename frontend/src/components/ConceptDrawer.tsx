@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditConceptDialog } from "@/components/EditConceptDialog";
+import { toast } from "@/components/ui/sonner";
 import { api, ApiError, type Concept, type PrerequisiteEntry, type Resource } from "@/lib/api";
 import { domainColor } from "@/lib/domain-colors";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,6 @@ export function ConceptDrawer({
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(
@@ -72,7 +72,6 @@ export function ConceptDrawer({
       return;
     }
     let cancelled = false;
-    setActionError(null);
     // The load itself guards nothing, so bail out on the state writes instead
     // if the selection changed while the requests were in flight.
     (async () => {
@@ -84,15 +83,17 @@ export function ConceptDrawer({
     };
   }, [conceptId, load]);
 
-  async function runAction(key: string, action: () => Promise<unknown>) {
+  async function runAction(key: string, successMessage: string, action: () => Promise<unknown>) {
     setBusyId(key);
-    setActionError(null);
     try {
       await action();
       if (conceptId) await load(conceptId, false);
       onGraphChanged();
+      toast.success(successMessage);
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "That didn't work.");
+      // The server's message is the useful part here. A rejected prerequisite
+      // explains it would create a cycle, which is worth showing verbatim.
+      toast.error(err instanceof ApiError ? err.message : "That didn't work.");
     } finally {
       setBusyId(null);
     }
@@ -170,12 +171,6 @@ export function ConceptDrawer({
       </CardHeader>
 
       <CardContent className="flex-1 space-y-5 overflow-y-auto p-4">
-        {actionError && (
-          <p className="rounded-md border-2 border-border bg-destructive/15 p-2 text-xs font-medium text-destructive">
-            {actionError}
-          </p>
-        )}
-
         <Section
           icon={<GitBranch className="h-3.5 w-3.5" />}
           title="Prerequisites"
@@ -186,7 +181,9 @@ export function ConceptDrawer({
               allConcepts={allConcepts}
               existing={directPrereqIds}
               onAdd={(prereqId) =>
-                runAction(`add-prereq-${prereqId}`, () => api.addPrerequisite(concept.id, prereqId))
+                runAction(`add-prereq-${prereqId}`, "Prerequisite added", () =>
+                  api.addPrerequisite(concept.id, prereqId)
+                )
               }
             />
           }
@@ -201,7 +198,10 @@ export function ConceptDrawer({
               // implied by the chain, so there is no single edge to delete.
               onRemove={
                 p.hopDistance === 1
-                  ? () => runAction(`rm-prereq-${p.id}`, () => api.removePrerequisite(concept.id, p.id))
+                  ? () =>
+                      runAction(`rm-prereq-${p.id}`, `Unlinked ${p.name}`, () =>
+                        api.removePrerequisite(concept.id, p.id)
+                      )
                   : undefined
               }
               busy={busyId === `rm-prereq-${p.id}`}
@@ -225,7 +225,9 @@ export function ConceptDrawer({
           empty="No resources linked yet."
           action={
             <AddResource
-              onAdd={(input) => runAction("add-resource", () => api.addResource(concept.id, input))}
+              onAdd={(input) =>
+                runAction("add-resource", "Resource added", () => api.addResource(concept.id, input))
+              }
             />
           }
         >
@@ -235,9 +237,15 @@ export function ConceptDrawer({
               resource={r}
               busy={busyId === `rm-res-${r.id}` || busyId === `edit-res-${r.id}`}
               onSave={(fields) =>
-                runAction(`edit-res-${r.id}`, () => api.updateResource(concept.id, r.id, fields))
+                runAction(`edit-res-${r.id}`, "Resource updated", () =>
+                  api.updateResource(concept.id, r.id, fields)
+                )
               }
-              onRemove={() => runAction(`rm-res-${r.id}`, () => api.deleteResource(concept.id, r.id))}
+              onRemove={() =>
+                runAction(`rm-res-${r.id}`, `Deleted ${r.title}`, () =>
+                  api.deleteResource(concept.id, r.id)
+                )
+              }
             />
           ))}
         </Section>

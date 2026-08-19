@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/sonner";
 import { api, ApiError, type Concept, type Domain } from "@/lib/api";
 
 const DOMAINS: Domain[] = ["Mathematics", "Physics", "Chemistry", "Biology", "Computer Science", "Design"];
@@ -63,6 +64,7 @@ export function EditConceptDialog({ concept, onUpdated, onDeleted }: EditConcept
         difficulty,
       });
       onUpdated(updated);
+      toast.success(`Saved ${updated.name}`);
       setOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save those changes.");
@@ -77,6 +79,9 @@ export function EditConceptDialog({ concept, onUpdated, onDeleted }: EditConcept
     try {
       await api.deleteConcept(concept.id);
       onDeleted(concept.id);
+      toast.success(`Deleted ${concept.name}`, {
+        description: "Its links and any notes only it taught were removed too.",
+      });
       setOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't delete this concept.");

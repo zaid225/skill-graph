@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/sonner";
 import { api, ApiError, type Concept, type Domain } from "@/lib/api";
 import { DOMAIN_COLORS } from "@/lib/domain-colors";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,11 @@ export function AddConceptDialog({ concepts, onCreated }: AddConceptDialogProps)
         prerequisiteIds,
       });
       onCreated(concept);
+      toast.success(`Added ${concept.name}`, {
+        description: prerequisiteIds.length
+          ? `Linked to ${prerequisiteIds.length} prerequisite${prerequisiteIds.length === 1 ? "" : "s"}.`
+          : "No prerequisites linked.",
+      });
       reset();
       setOpen(false);
     } catch (err) {
