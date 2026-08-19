@@ -60,6 +60,14 @@ export default function App() {
     if (node.label === "Concept") setSelectedId(node.id);
   };
 
+  // Re-fetch rather than splicing the new node in by hand: the concept may
+  // have brought REQUIRES edges with it, and the server is the authority on
+  // what the graph now looks like.
+  const handleConceptCreated = async (concept: Concept) => {
+    await loadGraph();
+    setSelectedId(concept.id);
+  };
+
   const handleFindPathTo = (conceptId: string) => {
     setPathFinderTarget(conceptId);
     setPathFinderKey((k) => k + 1);
@@ -81,6 +89,7 @@ export default function App() {
         onDomainChange={setActiveDomain}
         onSelectConcept={setSelectedId}
         connectionStatus={connectionStatus}
+        onConceptCreated={handleConceptCreated}
       />
 
       {showBanner && (

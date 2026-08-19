@@ -2,7 +2,7 @@
  * Standalone seed script for CognoDB.
  *
  * Run with: `npm run seed` (reads COGNODB_URI / COGNODB_USER / COGNODB_PASSWORD
- * from a local `.env` file via dotenv — see `.env.example`).
+ * from a local `.env` file via dotenv, see `.env.example`).
  *
  * This is intentionally a plain Node script (not a Worker) because seeding
  * is a one-off admin task best run from a developer machine or CI job, with
@@ -26,10 +26,10 @@ if (!URI || !USER || !PASSWORD) {
 
 // ---------------------------------------------------------------------------
 // Dataset: 39 Concepts + 39 Resources spanning STEM plus a Design/UI-UX
-// domain, with 46 REQUIRES and 39 TEACHES relationships (85 total) —
-// prerequisite chains run up to 6 hops deep for meaningful multi-hop
-// traversal / shortest-path demos, and Design bridges into Computer Science
-// via Design Systems -> Programming Fundamentals.
+// domain, with 46 REQUIRES and 39 TEACHES relationships (85 total).
+// Prerequisite chains run up to 6 hops deep so the multi-hop and shortest-path
+// queries have something real to chew on, and Design bridges into Computer
+// Science via Design Systems -> Programming Fundamentals.
 // ---------------------------------------------------------------------------
 
 const concepts: ConceptNode[] = [
@@ -167,7 +167,7 @@ const resources: ResourceNode[] = [
   { id: "res-designsystems-course", title: "Building Design Systems", url: "https://example-notes.dev/design-systems/course", type: "course" },
 ];
 
-/** [conceptId, prerequisiteConceptId][] — conceptId REQUIRES prerequisiteConceptId */
+/** [conceptId, prerequisiteConceptId][], conceptId REQUIRES prerequisiteConceptId */
 const requires: Array<[string, string]> = [
   ["algebra-1", "arithmetic"],
   ["algebra-2", "algebra-1"],
@@ -222,7 +222,7 @@ const requires: Array<[string, string]> = [
   ["design-systems", "programming-fundamentals"],
 ];
 
-/** [conceptId, resourceId][] — conceptId TEACHES resourceId */
+/** [conceptId, resourceId][], conceptId TEACHES resourceId */
 const teaches: Array<[string, string]> = [
   ["arithmetic", "res-arithmetic-notes"],
   ["algebra-1", "res-algebra1-notes"],

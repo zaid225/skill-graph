@@ -123,7 +123,7 @@ export function ConceptDrawer({ conceptId, onFindPathTo, onSelectConcept }: Conc
         <Section
           icon={<GitBranch className="h-3.5 w-3.5" />}
           title="Prerequisites"
-          empty="No prerequisites — this is a foundational concept."
+          empty="No prerequisites. This is a foundational concept."
         >
           {prerequisites.map((p) => (
             <ConceptRow key={p.id} concept={p} hop={p.hopDistance} onClick={() => onSelectConcept(p.id)} />

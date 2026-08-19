@@ -8,7 +8,7 @@
  */
 
 // Strip any trailing slash so `VITE_API_BASE_URL=http://host:port/` doesn't
-// produce a double slash once a path like "/api/..." is appended — the
+// produce a double slash once a path like "/api/..." is appended, the
 // Worker's router treats "//api/..." as a 404, not "/api/...".
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 
@@ -58,10 +58,14 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, body?: unknown): Promise<T> {
+  const init: RequestInit = body === undefined
+    ? {}
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}${path}`);
+    res = await fetch(`${BASE_URL}${path}`, init);
   } catch {
     throw new ApiError("NETWORK_ERROR", "Could not reach the SkillGraph API. Is the backend running?", 0);
   }
@@ -111,4 +115,29 @@ export const api = {
     request<{ source: string; target: string; hops: number; path: LearningPathStep[] }>(
       `/api/paths/shortest?source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`
     ),
+
+  createConcept: (input: NewConceptInput) => request<{ concept: Concept }>("/api/concepts", input),
+
+  addPrerequisite: (conceptId: string, prerequisiteId: string) =>
+    request<{ conceptId: string; prerequisiteId: string }>(
+      `/api/concepts/${encodeURIComponent(conceptId)}/prerequisites`,
+      { prerequisiteId }
+    ),
+
+  addResource: (conceptId: string, input: NewResourceInput) =>
+    request<{ resource: Resource }>(`/api/concepts/${encodeURIComponent(conceptId)}/resources`, input),
 };
+
+export interface NewConceptInput {
+  name: string;
+  description: string;
+  domain: Domain;
+  difficulty: Concept["difficulty"];
+  prerequisiteIds: string[];
+}
+
+export interface NewResourceInput {
+  title: string;
+  url: string;
+  type: Resource["type"];
+}

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ArrowRight, Route, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { api, ApiError, type Concept, type LearningPathStep } from "@/lib/api";
 import { domainColor } from "@/lib/domain-colors";
 
@@ -32,7 +31,7 @@ export function PathFinder({ concepts, initialSource, initialTarget, onPathFound
     } catch (err) {
       if (err instanceof ApiError && err.code === "NO_PATH_FOUND") {
         setError(
-          "These aren't connected by prerequisites — the target doesn't build on what you already know. Try a different pair."
+          "These aren't connected by prerequisites. The target doesn't build on what you already know, so try a different pair."
         );
       } else if (err instanceof ApiError) {
         setError(err.message);
@@ -124,8 +123,4 @@ function ConceptSelect({
       </select>
     </label>
   );
-}
-
-export function PathBadgeSummary({ hops }: { hops: number }) {
-  return <Badge variant="secondary">{hops} hops</Badge>;
 }

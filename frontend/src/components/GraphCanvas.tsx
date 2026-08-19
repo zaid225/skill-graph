@@ -13,7 +13,7 @@ interface GraphCanvasProps {
 
 // react-force-graph-2d's generics don't play well with our discriminated
 // union node type once force-simulation fields (x, y, vx, vy...) are mixed
-// in — we type our own data shapes and hand them to the component as `any`
+// in, we type our own data shapes and hand them to the component as `any`
 // at the render boundary instead of fighting the library's generics.
 type FGNode = GraphNode & { x?: number; y?: number };
 type FGLink = { source: string; target: string; type: string };
@@ -23,6 +23,7 @@ const ForceGraph = ForceGraph2D as unknown as ComponentType<Record<string, any>>
 export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onNodeClick }: GraphCanvasProps) {
   const fgRef = useRef<any>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
+  const hasFitRef = useRef(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   useEffect(() => {
@@ -82,6 +83,13 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
           highlightPath && highlightPath.has(String(l.source)) && highlightPath.has(String(l.target)) ? 3 : 1
         }
         cooldownTicks={80}
+        onEngineStop={() => {
+          // Fit once on first settle. Re-fitting later would yank the viewport
+          // out from under someone who has panned or zoomed themselves.
+          if (hasFitRef.current) return;
+          hasFitRef.current = true;
+          fgRef.current?.zoomToFit(400, 60);
+        }}
         onNodeClick={(node: FGNode) => onNodeClick(node as GraphNode)}
         nodeCanvasObject={(node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const n = node as FGNode;
@@ -103,13 +111,23 @@ export function GraphCanvas({ data, activeDomain, selectedId, highlightPath, onN
           ctx.strokeStyle = isSelected ? "#ea580c" : isOnPath ? "#ea580ccc" : "#2d2216";
           ctx.stroke();
 
-          if (globalScale > 1.2) {
-            const fontSize = 11 / globalScale;
-            ctx.font = `bold ${fontSize}px sans-serif`;
+          const showLabel = n.label === "Concept" ? globalScale > 0.45 : globalScale > 1.6;
+          if (showLabel) {
+            const fontSize = (n.label === "Concept" ? 11 : 9) / globalScale;
+            ctx.font = `${n.label === "Concept" ? "bold " : ""}${fontSize}px sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
-            ctx.fillStyle = "rgba(45,34,22,0.9)";
-            ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + radius + 2);
+
+            // Knock a light plate out behind the text so labels stay readable
+            // where they overlap edges or other nodes.
+            const padding = 2 / globalScale;
+            const width = ctx.measureText(label).width;
+            const top = (node.y ?? 0) + radius + padding;
+            ctx.fillStyle = "rgba(255, 253, 250, 0.75)";
+            ctx.fillRect((node.x ?? 0) - width / 2 - padding, top, width + padding * 2, fontSize + padding);
+
+            ctx.fillStyle = n.label === "Concept" ? "#2d2216" : "rgba(45,34,22,0.65)";
+            ctx.fillText(label, node.x ?? 0, top);
           }
         }}
       />

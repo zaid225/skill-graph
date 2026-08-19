@@ -1,24 +1,15 @@
-/**
- * CognoDB (Bolt / openCypher) driver access for the Worker.
+/*
+ * CognoDB access for the Worker.
  *
- * IMPORTANT — why there is no driver singleton here.
+ * Deliberately no driver singleton. Caching the Driver at module scope looks
+ * like an easy win (warm isolates skip the handshake) but Workers forbids
+ * reusing an I/O object across requests, so the pooled sockets blow up with
+ * "Cannot perform I/O on behalf of a different request object" on whichever
+ * request didn't create them. That shows up as an intermittent 500 that
+ * passes on retry. One driver per request, always closed, costs ~200ms and
+ * actually works.
  *
- * The obvious optimization is to cache the Driver at module scope so warm
- * isolates skip the TCP/TLS handshake. That is wrong on Cloudflare Workers:
- * the runtime forbids reusing an I/O object (here, the driver's pooled
- * sockets) across *different* requests. A cached driver works for whichever
- * request happened to create it and then throws
- * "Cannot perform I/O on behalf of a different request object" for later
- * ones — which surfaces as an intermittent HTTP 500 / error 1101 that passes
- * on retry and is thoroughly confusing to debug.
- *
- * So: one driver per request, always closed in a `finally`. The handshake
- * cost (~200ms, measured) is the price of correctness here.
- *
- * CognoDB speaks openCypher over Bolt 5.0–5.4, which is exactly what the
- * official `neo4j-driver` package targets — no special client needed. See the
- * README's "Running neo4j-driver on Cloudflare Workers" section for the three
- * runtime patches that make the driver work here at all.
+ * See the README for the driver patches needed to run this on Workers at all.
  */
 import neo4j, { Driver, Session } from "neo4j-driver";
 import type { Env } from "../types";
@@ -64,7 +55,7 @@ function asDatabaseError(err: any): unknown {
 
   if (isConnectivityIssue) {
     return new DatabaseUnavailableError(
-      "CognoDB is unreachable — it may be paused, misconfigured, or the credentials are invalid.",
+      "CognoDB is unreachable. It may be paused, misconfigured, or the credentials are invalid.",
       err
     );
   }

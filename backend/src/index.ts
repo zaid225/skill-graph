@@ -45,18 +45,18 @@ app.route("/api/concepts", conceptsRoute);
 app.route("/api/paths", pathsRoute);
 app.route("/api/graph", graphRoute);
 
-/** Global error handler — translates DB connectivity failures into a
+/** Global error handler, translates DB connectivity failures into a
  * structured 503 the frontend recognizes and renders as a recovery banner,
  * instead of letting the Worker crash with a 500. */
 app.onError((err, c) => {
   if (err instanceof DatabaseUnavailableError && err.cause) {
-    // Log the underlying driver error too — DatabaseUnavailableError's own
+    // Log the underlying driver error too, DatabaseUnavailableError's own
     // message is intentionally generic for API consumers, but the cause
     // (e.g. "Failed to establish connection in 10000ms") is what actually
     // tells you whether this is bad credentials, a paused instance, or a
     // network/firewall issue between the Worker and CognoDB.
     const cause = err.cause as { message?: string; code?: string; name?: string };
-    console.error(`${err.message} — cause: ${cause?.name ?? "Error"}: ${cause?.message ?? cause} (code=${cause?.code})`);
+    console.error(`${err.message} cause: ${cause?.name ?? "Error"}: ${cause?.message ?? cause} (code=${cause?.code})`);
   } else {
     console.error(err);
   }

@@ -1,13 +1,11 @@
-/**
- * Parameterized openCypher query library.
- *
- * Every query here uses Cypher parameters ($foo) rather than string
- * interpolation — this is what makes them injection-safe, and it's also
- * what lets CognoDB cache query plans across calls.
+/*
+ * openCypher queries. Everything is passed as a Cypher parameter ($foo) rather
+ * than interpolated, which keeps them injection-safe and lets CognoDB reuse
+ * query plans.
  */
 import type { Session } from "neo4j-driver";
-import { withSession } from "./driver";
-import type { Env, ConceptNode, ResourceNode, GraphOverviewResponse } from "../types";
+import { withSession, withWriteSession } from "./driver";
+import type { Env, ConceptNode, ResourceNode, GraphOverviewResponse, Domain } from "../types";
 
 function toConcept(node: any): ConceptNode {
   const p = node.properties;
@@ -26,7 +24,7 @@ function toResource(node: any): ResourceNode {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Full graph overview — powers the interactive canvas.
+// 1. Full graph overview, powers the interactive canvas.
 // ---------------------------------------------------------------------------
 export async function getGraphOverview(env: Env): Promise<GraphOverviewResponse> {
   return withSession(env, async (session: Session) => {
@@ -165,16 +163,14 @@ export interface LearningPathStep {
 }
 
 /**
- * Shortest study route from where a learner is now (`sourceId`) to what they
- * want to learn (`targetId`), returned in the order they should study it.
+ * Shortest study route from what a learner knows (sourceId) to what they want
+ * to learn (targetId), in the order they should study it.
  *
- * Note the direction flip. `REQUIRES` points from an advanced concept *down*
- * to its prerequisite (Quantum Mechanics -[:REQUIRES]-> Linear Algebra), so a
- * learner's forward journey runs against the arrows. We therefore traverse
- * from the goal down to their starting point and `reverse()` the result, which
- * yields a path reading source -> ... -> target. Traversing source -> target
- * directly would only ever match when the caller passed the advanced concept
- * as the source — i.e. it would fail for exactly the intuitive input.
+ * Watch the direction. REQUIRES points from an advanced concept down to its
+ * prerequisite, so the learner's forward journey runs against the arrows. We
+ * traverse goal -> start and reverse the result. Matching source -> target
+ * directly only works if the caller passes the advanced concept as the source,
+ * i.e. it fails on exactly the input people expect to give it.
  */
 export async function getShortestLearningPath(
   env: Env,
@@ -224,5 +220,151 @@ export async function searchConcepts(env: Env, query: string): Promise<ConceptNo
       { query }
     );
     return result.records.map((r) => toConcept(r.get("c")));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Writes
+// ---------------------------------------------------------------------------
+
+/** Turns "Discrete Mathematics" into "discrete-mathematics". */
+export function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+export async function conceptExists(env: Env, id: string): Promise<boolean> {
+  return withSession(env, async (session) => {
+    const r = await session.run(`MATCH (c:Concept {id: $id}) RETURN count(c) AS n`, { id });
+    return r.records[0].get("n") > 0;
+  });
+}
+
+/**
+ * Would adding (concept)-[:REQUIRES]->(prereq) close a loop? A curriculum
+ * where A needs B and B needs A is unlearnable, so we reject it up front.
+ * The question is just whether prereq can already reach concept, which is a
+ * variable-length path check.
+ *
+ * Uses OPTIONAL MATCH + count() rather than the more obvious
+ * EXISTS((prereq)-[:REQUIRES*]->(concept)). On CognoDB 0.9.x, EXISTS() ignores
+ * the already-bound prereq/concept and returns true whenever any REQUIRES path
+ * exists anywhere, which rejects every legitimate link. Both EXISTS(pattern)
+ * and EXISTS { ... } behave this way.
+ */
+export async function wouldCreateCycle(
+  env: Env,
+  conceptId: string,
+  prereqId: string
+): Promise<boolean> {
+  if (conceptId === prereqId) return true;
+  return withSession(env, async (session) => {
+    const r = await session.run(
+      `
+      MATCH (prereq:Concept {id: $prereqId})
+      OPTIONAL MATCH path = (prereq)-[:REQUIRES*1..]->(concept:Concept {id: $conceptId})
+      RETURN count(path) > 0 AS wouldCycle
+      `,
+      { conceptId, prereqId }
+    );
+    return r.records.length > 0 && r.records[0].get("wouldCycle") === true;
+  });
+}
+
+export interface NewConcept {
+  name: string;
+  description: string;
+  domain: Domain;
+  difficulty: ConceptNode["difficulty"];
+  prerequisiteIds: string[];
+}
+
+/**
+ * Creates a concept and its prerequisite edges in one transaction so a partial
+ * failure can't leave the node stranded without them. No cycle check needed:
+ * nothing points at a brand-new node yet, so its outgoing edges can't close a
+ * loop.
+ */
+export async function createConcept(env: Env, input: NewConcept): Promise<ConceptNode> {
+  const id = slugify(input.name);
+
+  return withWriteSession(env, async (session) => {
+    return session.executeWrite(async (tx) => {
+      const created = await tx.run(
+        `
+        CREATE (c:Concept {
+          id: $id, name: $name, description: $description,
+          domain: $domain, difficulty: $difficulty
+        })
+        RETURN c
+        `,
+        {
+          id,
+          name: input.name.trim(),
+          description: input.description.trim(),
+          domain: input.domain,
+          difficulty: input.difficulty,
+        }
+      );
+
+      if (input.prerequisiteIds.length > 0) {
+        await tx.run(
+          `
+          MATCH (c:Concept {id: $id})
+          UNWIND $prerequisiteIds AS prereqId
+          MATCH (p:Concept {id: prereqId})
+          MERGE (c)-[:REQUIRES]->(p)
+          `,
+          { id, prerequisiteIds: input.prerequisiteIds }
+        );
+      }
+
+      return toConcept(created.records[0].get("c"));
+    });
+  });
+}
+
+/** Links an existing concept to an existing prerequisite. Caller must have
+ * already run wouldCreateCycle. MERGE keeps the edge idempotent. */
+export async function addPrerequisite(env: Env, conceptId: string, prereqId: string): Promise<void> {
+  await withWriteSession(env, async (session) => {
+    await session.run(
+      `
+      MATCH (c:Concept {id: $conceptId}), (p:Concept {id: $prereqId})
+      MERGE (c)-[:REQUIRES]->(p)
+      `,
+      { conceptId, prereqId }
+    );
+  });
+}
+
+export interface NewResource {
+  title: string;
+  url: string;
+  type: ResourceNode["type"];
+}
+
+export async function addResource(
+  env: Env,
+  conceptId: string,
+  input: NewResource
+): Promise<ResourceNode> {
+  const id = `res-${slugify(input.title)}-${Date.now().toString(36)}`;
+
+  return withWriteSession(env, async (session) => {
+    const r = await session.run(
+      `
+      MATCH (c:Concept {id: $conceptId})
+      CREATE (res:Resource {id: $id, title: $title, url: $url, type: $type})
+      CREATE (c)-[:TEACHES]->(res)
+      RETURN res
+      `,
+      { conceptId, id, title: input.title.trim(), url: input.url.trim(), type: input.type }
+    );
+    return toResource(r.records[0].get("res"));
   });
 }

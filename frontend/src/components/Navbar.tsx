@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Network, Search, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { AddConceptDialog } from "@/components/AddConceptDialog";
 import { cn } from "@/lib/utils";
 import type { Concept, Domain } from "@/lib/api";
 import { DOMAIN_COLORS } from "@/lib/domain-colors";
@@ -16,9 +17,17 @@ interface NavbarProps {
   onDomainChange: (domain: Domain | null) => void;
   onSelectConcept: (conceptId: string) => void;
   connectionStatus: ConnectionStatus;
+  onConceptCreated: (concept: Concept) => void;
 }
 
-export function Navbar({ concepts, activeDomain, onDomainChange, onSelectConcept, connectionStatus }: NavbarProps) {
+export function Navbar({
+  concepts,
+  activeDomain,
+  onDomainChange,
+  onSelectConcept,
+  connectionStatus,
+  onConceptCreated,
+}: NavbarProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,6 +125,8 @@ export function Navbar({ concepts, activeDomain, onDomainChange, onSelectConcept
             </button>
           ))}
         </div>
+
+        <AddConceptDialog concepts={concepts} onCreated={onConceptCreated} />
 
         <ConnectionBadge status={connectionStatus} />
       </div>
