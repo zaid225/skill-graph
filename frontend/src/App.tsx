@@ -31,11 +31,17 @@ export default function App() {
       setConcepts(conceptList.concepts);
       setConnectionStatus("connected");
     } catch (err) {
-      if (err instanceof ApiError && err.code === "DATABASE_UNAVAILABLE") {
-        setConnectionStatus("disconnected");
-        setLoadError(err.message);
-      } else if (err instanceof ApiError) {
-        setLoadError(err.message);
+      // Anything that stops the initial load counts as disconnected, not just
+      // a 503 from the database. If the Worker itself is unreachable the fetch
+      // rejects as NETWORK_ERROR, and treating that as a lesser problem left
+      // the badge stuck on "checking" with a blank canvas and no explanation.
+      setConnectionStatus("disconnected");
+      if (err instanceof ApiError) {
+        setLoadError(
+          err.code === "NETWORK_ERROR"
+            ? "Can't reach the SkillGraph API. It may be waking up, or your connection dropped."
+            : err.message
+        );
       } else {
         setLoadError("Failed to load the graph.");
       }
@@ -117,6 +123,17 @@ export default function App() {
                 <Skeleton className="h-40 w-full" />
                 <Skeleton className="h-4 w-1/2" />
               </div>
+            </div>
+          )}
+
+          {!loading && loadError && !overview && (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+              <AlertTriangle className="h-7 w-7 text-destructive" />
+              <p className="text-sm font-bold uppercase tracking-wide">Couldn't load the graph</p>
+              <p className="max-w-sm text-xs text-muted-foreground">{loadError}</p>
+              <Button size="sm" variant="outline" onClick={loadGraph} className="mt-1 gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" /> Try again
+              </Button>
             </div>
           )}
 

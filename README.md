@@ -32,6 +32,26 @@ Filtering to a domain narrows the canvas to those concepts and the notes attache
 
 ![Domain filter](docs/screenshots/domain-filter.png)
 
+Zooming in keeps labels sharp. They are drawn in screen space at real pixel sizes rather than scaled by the canvas transform, which is what usually turns graph labels to mush at high zoom.
+
+![Zoomed graph](docs/screenshots/graph-zoomed.png)
+
+Selecting a concept shows its full prerequisite tree with hop distances, what depends on it, and the notes and tests attached to it. Everything here is editable in place.
+
+![Concept inspector](docs/screenshots/concept-inspector.png)
+
+Concepts can be renamed, re-tagged or deleted. The id stays fixed across a rename so existing relationships keep working.
+
+![Edit concept](docs/screenshots/edit-concept.png)
+
+Prerequisite links are cycle-guarded. Asking for a link that would make the curriculum circular is refused before anything is written, and the reason comes back verbatim from the server.
+
+![Cycle guard](docs/screenshots/cycle-guard.png)
+
+If the API or the database is unreachable, the app says so in three places rather than showing an empty canvas: the status badge, a banner with a retry, and the canvas itself.
+
+![Database unreachable](docs/screenshots/db-offline.png)
+
 The layout works down to phone widths. Domain filters scroll sideways instead of wrapping, the connection badge and add button collapse to icons, and the panels stack under the canvas.
 
 ![Mobile layout](docs/screenshots/mobile.png)
